@@ -1,13 +1,13 @@
 {
   Pretty much anything good in this code you can thank Slacky for.
-  Also thanks to Citrus for mentioning ffmpeg + how to use it via the command prompt
 }
 
 type
   TGameRecorder = record
     Timer: TMMLTimer;
-    Path, LastSaveFile: String;
-    FPS, Duration, TimeBetweenPics, ClientDimensionW, ClientDimensionH: Int32;
+    Path: String;
+    FPS, Duration, TimeBetweenPics, FileNumber, KeepCopies,
+    ClientDimensionW, ClientDimensionH: Int32;
     Frames: array of TMufasaBitmap;
     CanFree, NoDebugMessages, OnlySaveOnTerminate: Boolean;
     EveryLoop: Procedure;
@@ -18,6 +18,7 @@ var
 
 {
   Runs a command in the Command Prompt.
+//Thanks @Citrus
 }
 procedure Execute(command: string; waitTillCompleted: boolean = true);
 var
@@ -50,22 +51,24 @@ begin
   end;
   SetLength(self.Frames, 0);
 
-  //alternating between saving as output.mp4 and other_output.mp4, since
-  //terminating with only x frames recorded means only a x frame video is saved)
-  if self.LastSaveFile = 'output.mp4' then
-    self.LastSaveFile := 'other_output.mp4'
-  else
-    self.LastSaveFile := 'output.mp4';
+  client.WriteLn(IntToStr(self.FileNumber));
+  client.WriteLn(IntToStr(self.KeepCopies - 1));
+  if self.FileNumber >= (self.KeepCopies - 1) then
+  begin
+    if not self.NoDebugMessages then
+      client.WriteLn('Deleting: '+'output'+intToStr(self.FileNumber - self.KeepCopies + 1)+'.mp4');
+    DeleteFile(self.Path +'/output'+intToStr(self.FileNumber - self.KeepCopies + 1)+'.mp4');
+  end;
+  inc(self.FileNumber);
 
-  DeleteFile(self.Path +'/'+ self.LastSaveFile);
   if not self.NoDebugMessages then
-    client.WriteLn('Generating video: ' + self.LastSaveFile);
-  Execute('ffmpeg -vtag xvid -framerate ' + ToStr(self.FPS) + ' -i "'+self.Path+'/tmp/img%01d.jpg" "'+self.Path+'/'+self.LastSaveFile+'"');
+    client.WriteLn('Generating video: ' + 'output'+intToStr(self.FileNumber)+'.mp4');
+  Execute('ffmpeg -vtag xvid -framerate ' + ToStr(self.FPS) + ' -i "'+self.Path+'/tmp/img%01d.jpg" "'+self.Path+'/output'+intToStr(self.FileNumber)+'.mp4'+'"');
 end;
 
 procedure TGameRecorder.Capture(Junk, Sender: Pointer); static;
 var
-  FrameCount, i: int32;
+  FrameCount: int32;
 begin
   GameRecorder.CanFree := False;
   FrameCount := Length(GameRecorder.Frames);
@@ -82,11 +85,12 @@ begin
 
     if GameRecorder.OnlySaveOnTerminate then
     begin
-      //clears GameRecorder.Frames. Ideally it should instead be just deleting the first bitmap in the array, and then appending a fresh one to the array.
-      for i := 0 to high(GameRecorder.Frames) do
-        GameRecorder.Frames[i].Free();
-      GameRecorder.Frames := []
+      GameRecorder.Frames[0].Free();
+      delete(GameRecorder.Frames, 0, 1);
 
+      SetLength(GameRecorder.Frames, FrameCount);
+      GameRecorder.Frames[FrameCount - 1].Init(client.GetMBitmaps);
+      GameRecorder.Frames[FrameCount - 1].CopyClientToBitmap(client.GetIOManager, True, 0,0, GameRecorder.ClientDimensionW-1, GameRecorder.ClientDimensionH-1);
     end else
       GameRecorder.Save();
   end;
@@ -116,11 +120,13 @@ end;
 
 procedure TGameRecorder.Start(ClipFPS, ClipDurationInSeconds: Int32);
 begin
-  if Self.Path = '' then Self.Path := 'temp_videos';
+  if Self.Path = '' then Self.Path            := 'temp_videos';
+  if Self.KeepCopies = 0 then self.KeepCopies := 2;
 
-  Self.FPS                         := ClipFPS;
-  Self.Duration                    := ClipDurationInSeconds * 1000;
-  Self.TimeBetweenPics             := 1000 div Self.FPS;
+  Self.FPS                                    := ClipFPS;
+  Self.Duration                               := ClipDurationInSeconds * 1000;
+  Self.TimeBetweenPics                        := 1000 div Self.FPS;
+
 
   GetClientDimensions(Self.ClientDimensionW, Self.ClientDimensionH);
   if (Self.ClientDimensionW < 1) or (Self.ClientDimensionH < 1) then
@@ -134,14 +140,23 @@ begin
   if Self.ClientDimensionW mod 2 = 1 then Dec(Self.ClientDimensionW);
   if Self.ClientDimensionH mod 2 = 1 then Dec(Self.ClientDimensionH);
 
+  DeleteDirectory(Self.Path, true);
   CreateDirectory(Self.Path);
   CreateDirectory(Self.Path+'/tmp/');
 
   if not DirectoryExists(Self.Path) then
   begin
-    if not self.NoDebugMessages then
-      writeln('ERROR: unable to create ' + Self.Path + ' directory');
-    exit(); //forces self.Timer to be nil, since self.Timer wont be initialized below
+    wait(1000); //incase file explorer was open, blocking us
+    DeleteDirectory(Self.Path, true);
+    CreateDirectory(Self.Path);
+    CreateDirectory(Self.Path+'/tmp/');
+
+    if not DirectoryExists(Self.Path) then
+    begin
+      if not self.NoDebugMessages then
+        writeln('ERROR: unable to create ' + Self.Path + ' directory');
+      exit(); //forces self.Timer to be nil, since self.Timer wont be initialized below
+    end;
   end;
 
   Self.Timer.Init();
@@ -152,3 +167,21 @@ begin
 
   Self.Timer.SetEnabled(True);
 end;
+
+
+{
+begin
+  //GameRecorder.NoDebugMessages := True;
+  //GameRecorder.Path := 'videos'; //If not set, then by default temp_videos is the directory being used (C:\Simba\temp_videos\)
+  GameRecorder.OnlySaveOnTerminate := True;
+  //GameRecorder.EveryLoop := @SomeFunc;
+
+  GameRecorder.Start(5, 5);
+
+  //Simulates a script running for 8 seconds
+  for 1 to 8 do
+    wait(1000);
+
+  GameRecorder.Stop();
+end.
+ }
