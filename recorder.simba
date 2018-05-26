@@ -1,5 +1,6 @@
 {
   Pretty much anything good in this code you can thank Slacky for.
+  Also thanks to Citrus for mentioning ffmpeg + how to use it via the command prompt
 }
 
 type
@@ -167,21 +168,3 @@ begin
 
   Self.Timer.SetEnabled(True);
 end;
-
-
-{
-begin
-  //GameRecorder.NoDebugMessages := True;
-  //GameRecorder.Path := 'videos'; //If not set, then by default temp_videos is the directory being used (C:\Simba\temp_videos\)
-  GameRecorder.OnlySaveOnTerminate := True;
-  //GameRecorder.EveryLoop := @SomeFunc;
-
-  GameRecorder.Start(5, 5);
-
-  //Simulates a script running for 8 seconds
-  for 1 to 8 do
-    wait(1000);
-
-  GameRecorder.Stop();
-end.
- }
