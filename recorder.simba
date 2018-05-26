@@ -1,0 +1,154 @@
+{
+  Pretty much anything good in this code you can thank Slacky for.
+  Also thanks to Citrus for mentioning ffmpeg + how to use it via the command prompt
+}
+
+type
+  TGameRecorder = record
+    Timer: TMMLTimer;
+    Path, LastSaveFile: String;
+    FPS, Duration, TimeBetweenPics, ClientDimensionW, ClientDimensionH: Int32;
+    Frames: array of TMufasaBitmap;
+    CanFree, NoDebugMessages, OnlySaveOnTerminate: Boolean;
+    EveryLoop: Procedure;
+  end;
+
+var
+  GameRecorder: TGameRecorder;
+
+{
+  Runs a command in the Command Prompt.
+}
+procedure Execute(command: string; waitTillCompleted: boolean = true);
+var
+  Proc: TProcess;
+begin
+  Proc.Init(nil);
+  Proc.setExecutable(command);
+
+  if waitTillCompleted then
+    //Proc.SetOptions(Proc.GetOptions + [poWaitOnExit]);
+    Proc.SetOptions([poWaitOnExit]);
+
+  Proc.Execute();
+  Proc.Free();
+end;
+
+procedure TGameRecorder.Save();
+var
+  i: Int32;
+begin
+  DeleteDirectory(self.Path + '/tmp', true);
+  CreateDirectory(self.Path + '/tmp');
+
+  if not self.NoDebugMessages then
+    client.WriteLn('Saving ' + IntToStr(length(self.Frames)) + ' Images');
+  for i:=0 to high(self.Frames) do
+  begin
+    self.Frames[i].SaveToFile(Format('%s/tmp/img%d.jpg', [self.Path, i+1]));
+    self.Frames[i].Free();
+  end;
+  SetLength(self.Frames, 0);
+
+  //alternating between saving as output.mp4 and other_output.mp4, since
+  //terminating with only x frames recorded means only a x frame video is saved)
+  if self.LastSaveFile = 'output.mp4' then
+    self.LastSaveFile := 'other_output.mp4'
+  else
+    self.LastSaveFile := 'output.mp4';
+
+  DeleteFile(self.Path +'/'+ self.LastSaveFile);
+  if not self.NoDebugMessages then
+    client.WriteLn('Generating video: ' + self.LastSaveFile);
+  Execute('ffmpeg -vtag xvid -framerate ' + ToStr(self.FPS) + ' -i "'+self.Path+'/tmp/img%01d.jpg" "'+self.Path+'/'+self.LastSaveFile+'"');
+end;
+
+procedure TGameRecorder.Capture(Junk, Sender: Pointer); static;
+var
+  FrameCount, i: int32;
+begin
+  GameRecorder.CanFree := False;
+  FrameCount := Length(GameRecorder.Frames);
+
+  if (FrameCount * GameRecorder.TimeBetweenPics) < GameRecorder.Duration then
+  begin
+    SetLength(GameRecorder.Frames, FrameCount+1);
+    GameRecorder.Frames[FrameCount].Init(client.GetMBitmaps);
+    GameRecorder.Frames[FrameCount].CopyClientToBitmap(client.GetIOManager, True, 0,0, GameRecorder.ClientDimensionW-1, GameRecorder.ClientDimensionH-1);
+  end else
+  begin
+    if not (@GameRecorder.EveryLoop = nil) then
+      GameRecorder.EveryLoop();
+
+    if GameRecorder.OnlySaveOnTerminate then
+    begin
+      //clears GameRecorder.Frames. Ideally it should instead be just deleting the first bitmap in the array, and then appending a fresh one to the array.
+      for i := 0 to high(GameRecorder.Frames) do
+        GameRecorder.Frames[i].Free();
+      GameRecorder.Frames := []
+
+    end else
+      GameRecorder.Save();
+  end;
+
+  GameRecorder.CanFree := True;
+end;
+
+procedure TGameRecorder.Stop();
+var i: Int32;
+begin
+  if self.Timer = nil then
+    exit();
+
+  Self.Timer.SetEnabled(False);
+  Self.Save();
+
+  while not Self.CanFree do Wait(5);
+  Self.Timer.Free();
+  for i:=0 to High(self.Frames) do Self.Frames[i].Free();
+  SetLength(Self.Frames, 0);
+end;
+
+procedure StopGameRecorder();
+begin
+  GameRecorder.Stop();
+end;
+
+procedure TGameRecorder.Start(ClipFPS, ClipDurationInSeconds: Int32);
+begin
+  if Self.Path = '' then Self.Path := 'temp_videos';
+
+  Self.FPS                         := ClipFPS;
+  Self.Duration                    := ClipDurationInSeconds * 1000;
+  Self.TimeBetweenPics             := 1000 div Self.FPS;
+
+  GetClientDimensions(Self.ClientDimensionW, Self.ClientDimensionH);
+  if (Self.ClientDimensionW < 1) or (Self.ClientDimensionH < 1) then
+  begin
+    if not self.NoDebugMessages then
+      writeln('ERROR: client dimensions problem. Width: ', Self.ClientDimensionW, ' & Height: ', Self.ClientDimensionH);
+    exit(); //forces self.Timer to be nil, since it wont be init'd below
+  end;
+
+  //if need be, cuts off 1 pixel to make the dimensions even (for ffmpeg)
+  if Self.ClientDimensionW mod 2 = 1 then Dec(Self.ClientDimensionW);
+  if Self.ClientDimensionH mod 2 = 1 then Dec(Self.ClientDimensionH);
+
+  CreateDirectory(Self.Path);
+  CreateDirectory(Self.Path+'/tmp/');
+
+  if not DirectoryExists(Self.Path) then
+  begin
+    if not self.NoDebugMessages then
+      writeln('ERROR: unable to create ' + Self.Path + ' directory');
+    exit(); //forces self.Timer to be nil, since self.Timer wont be initialized below
+  end;
+
+  Self.Timer.Init();
+  Self.Timer.SetInterval(1000 div Self.FPS);
+  Self.Timer.SetOnTimer(natify(@TGameRecorder.Capture));
+
+  AddOnTerminate('StopGameRecorder'); //I wanted to do something like `AddOnTerminate('Self.Stop');` but that didnt seem to work
+
+  Self.Timer.SetEnabled(True);
+end;
