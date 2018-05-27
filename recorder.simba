@@ -40,6 +40,12 @@ procedure TGameRecorder.Save();
 var
   i: Int32;
 begin
+  if length(self.Frames) < 1 then
+  begin
+    writeln('No more frames to save, exitting');
+    exit();
+  end;
+
   DeleteDirectory(self.Path + '/tmp', true);
   CreateDirectory(self.Path + '/tmp');
 
@@ -52,9 +58,7 @@ begin
   end;
   SetLength(self.Frames, 0);
 
-  client.WriteLn(IntToStr(self.FileNumber));
-  client.WriteLn(IntToStr(self.KeepCopies - 1));
-  if self.FileNumber >= (self.KeepCopies - 1) then
+  if self.FileNumber >= (self.KeepCopies) then
   begin
     if not self.NoDebugMessages then
       client.WriteLn('Deleting: '+'output'+intToStr(self.FileNumber - self.KeepCopies + 1)+'.mp4');
@@ -114,6 +118,7 @@ begin
   SetLength(Self.Frames, 0);
 end;
 
+//I wanted to do something like `AddOnTerminate('Self.Stop');` but that didnt seem to work
 procedure StopGameRecorder();
 begin
   GameRecorder.Stop();
@@ -164,7 +169,7 @@ begin
   Self.Timer.SetInterval(1000 div Self.FPS);
   Self.Timer.SetOnTimer(natify(@TGameRecorder.Capture));
 
-  AddOnTerminate('StopGameRecorder'); //I wanted to do something like `AddOnTerminate('Self.Stop');` but that didnt seem to work
+  AddOnTerminate('StopGameRecorder');
 
   Self.Timer.SetEnabled(True);
 end;
