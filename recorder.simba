@@ -6,12 +6,12 @@
 type
   TGameRecorder = record
     Timer: TMMLTimer;
-    Path: String;
+    VideosFolder, MainFolder: String;
     FPS, Duration, TimeBetweenPics, FileNumber, KeepCopies,
-    PermanentSaveEvery, PermFileNumber, TimeSinceLastPermSave, TimeAtLastPermSave,
     ClientDimensionW, ClientDimensionH, MouseSizeX, MouseSizeY: Int32;
     Frames: array of TMufasaBitmap;
-    CanFree, NoDebugMessages, OnlySaveOnTerminate, RecordMouse, ShouldPermSave: Boolean;
+    CanFree, SilentMode, OnlySaveOnTerminate, RecordMouse,
+    Started, SavingVideo: Boolean;
     EveryLoop: Procedure;
     MouseColor: TColor;
   end;
@@ -38,60 +38,110 @@ begin
   Proc.Free();
 end;
 
-procedure TGameRecorder.Save(PermSave: boolean = false);
+procedure TGameRecorder._Save(SaveName: string = '');
 var
-  i, VideoNumber: Int32;
-  VideoName: string;
+  i: Int32;
+  VideoName, VideoNumber: string;
 begin
+  //Checking to make sure there's atleast 1 frame to save
   if length(self.Frames) < 1 then
   begin
-    writeln('No more frames to save, exitting');
+    if not self.SilentMode then
+      if not Self.Started then
+        client.writeln('ERROR: Recorder is not running, can''t save file!')
+      else
+        client.writeln('WARNING: No more frames to save, exitting');
     exit();
   end;
 
-  DeleteDirectory(self.Path + '/tmp', true);
-  CreateDirectory(self.Path + '/tmp');
+  //Checking to see if we're already saving a video
+  if Self.SavingVideo then
+  begin
+    if not self.SilentMode then
+      client.WriteLn('ERROR: Already saving a video! exitting.');
+    exit();
+  end else
+    Self.SavingVideo := true;
 
-  if not self.NoDebugMessages then
+  //Clearing /tmp/
+  DeleteDirectory(self.VideosFolder + '/tmp', true);
+  if DirectoryExists(self.VideosFolder + '/tmp') then
+  begin
+    if not self.SilentMode then
+      client.WriteLn('ERROR: Failed to delete ' + self.VideosFolder + '/tmp');
+    Self.SavingVideo := false;
+    exit();
+  end;
+
+  CreateDirectory(self.VideosFolder + '/tmp');
+  if not DirectoryExists(self.VideosFolder + '/tmp') then
+  begin
+    if not self.SilentMode then
+      client.WriteLn('ERROR: Failed to create ' + self.VideosFolder + '/tmp');
+    Self.SavingVideo := false;
+    exit();
+  end;
+
+  //Saving bitmaps to file as imgX.jpg
+  if not self.SilentMode then
     client.WriteLn('Saving ' + IntToStr(length(self.Frames)) + ' Images');
   for i:=0 to high(self.Frames) do
-    self.Frames[i].SaveToFile(Format('%s/tmp/img%d.jpg', [self.Path, i+1]));
+    self.Frames[i].SaveToFile(Format('%s/tmp/img%d.jpg', [self.VideosFolder, i+1]));
 
-  if not PermSave then
+  //pics are cleared out only when doing a regular save, regular users calling .save() wont be clearing out recent images.
+  if SaveName = '' then
   begin
-    //we're not clearing out the pictures when PermSaving
     for i:=0 to high(self.Frames) do
       self.Frames[i].Free();
     SetLength(self.Frames, 0);
   end;
 
-  if not PermSave then
+  //VideoName and VideoNumber
+  if SaveName = '' then
   begin
+    //If calling ._save() directly, with no SaveName
     if self.FileNumber >= (self.KeepCopies) then
     begin
-      if not self.NoDebugMessages then
-        client.WriteLn('Deleting: '+'output'+intToStr(self.FileNumber - self.KeepCopies + 1)+'.mp4');
-      DeleteFile(self.Path +'/output'+intToStr(self.FileNumber - self.KeepCopies + 1)+'.mp4');
+      if not self.SilentMode then
+        client.WriteLn('Deleting video: '+'output'+intToStr(self.FileNumber - self.KeepCopies + 1)+'.mp4');
+      DeleteFile(self.VideosFolder +'/output'+intToStr(self.FileNumber - self.KeepCopies + 1)+'.mp4');
     end;
     inc(self.FileNumber);
 
     VideoName := 'output';
-    VideoNumber := Self.FileNumber;
+    VideoNumber := IntToStr(Self.FileNumber);
   end else
   begin
-    inc(Self.PermFileNumber);
-    VideoName := 'PermanentSave';
-    VideoNumber := self.PermFileNumber;
+    //If User calls .Save(), which asks for a SaveName
+    if FileExists(Self.VideosFolder + '/' + SaveName + '.mp4') then
+    begin
+      if not self.SilentMode then
+        client.WriteLn('WARNING: ' + SaveName + '.mp4' + ' already exists. We are writing over that file now.');
+      DeleteFile(Self.VideosFolder + '/' + SaveName + '.mp4');
+    end;
+
+    VideoName := SaveName;
+    VideoNumber := ''; //unnecessary
   end;
 
-  if not self.NoDebugMessages then
-    client.WriteLn('Generating video: '+VideoName+intToStr(VideoNumber)+'.mp4');
-  Execute('ffmpeg -vtag xvid -framerate ' + ToStr(self.FPS) + ' -i "'+self.Path+'/tmp/img%01d.jpg" "'+self.Path+'/'+VideoName+IntToStr(VideoNumber)+'.mp4'+'"');
+  if not self.SilentMode then
+    client.WriteLn('Generating video: '+VideoName+VideoNumber+'.mp4');
+
+  Execute('ffmpeg -vtag xvid -framerate ' + ToStr(self.FPS) + ' -i "'+self.VideosFolder+'/tmp/img%01d.jpg" "'+self.VideosFolder+'/'+VideoName+VideoNumber+'.mp4'+'"');
+  Self.SavingVideo := false;
+end;
+
+{
+  To help differentiate between a user save and an internal _save
+}
+procedure TGameRecorder.Save(SaveName: string);
+begin
+  Self._Save(SaveName);
 end;
 
 procedure TGameRecorder.Capture(Junk, Sender: Pointer); static;
 var
-  FrameCount, CurrentTime: int32;
+  FrameCount: int32;
   x, y: int32;
 begin
   GameRecorder.CanFree := False;
@@ -123,31 +173,24 @@ begin
       GameRecorder.Frames[FrameCount - 1].Init(client.GetMBitmaps);
       GameRecorder.Frames[FrameCount - 1].CopyClientToBitmap(client.GetIOManager, True, 0,0, GameRecorder.ClientDimensionW-1, GameRecorder.ClientDimensionH-1);
     end else
-      GameRecorder.Save();
-  end;
-
-  if GameRecorder.ShouldPermSave then
-  begin
-    CurrentTime := GetTickCount();
-    if (CurrentTime - GameRecorder.TimeAtLastPermSave) > (GameRecorder.PermanentSaveEvery) then
-    begin
-      GameRecorder.TimeSinceLastPermSave := 0;
-      GameRecorder.TimeAtLastPermSave := CurrentTime;
-      GameRecorder.Save(True);
-    end;
+      GameRecorder._Save();
   end;
 
   GameRecorder.CanFree := True;
 end;
 
 procedure TGameRecorder.Stop();
-var i: Int32;
+var
+  i: Int32;
 begin
   if self.Timer = nil then
     exit();
 
+  Client.WriteLn('Stopping Recorder and doing a final save.');
+
   Self.Timer.SetEnabled(False);
-  Self.Save();
+  Self._Save();
+  Self.SavingVideo := false;
 
   while not Self.CanFree do Wait(5);
   Self.Timer.Free();
@@ -159,30 +202,28 @@ end;
 procedure StopGameRecorder();
 begin
   GameRecorder.Stop();
+
+  GameRecorder
 end;
 
 procedure TGameRecorder.Start(ClipFPS, ClipDurationInSeconds: Int32);
 begin
-  if Self.PermanentSaveEvery > 0 then Self.ShouldPermSave := True;
+  if Self.VideosFolder = '' then Self.VideosFolder  := 'temp_videos';
+  if Self.KeepCopies = 0 then Self.KeepCopies       := 2;
+  if Self.MouseColor = 0 then Self.MouseColor       := 255;
+  if Self.MouseSizeX = 0 then Self.MouseSizeX       := 1;
+  if Self.MouseSizeY = 0 then Self.MouseSizeY       := 1;
 
-  if Self.Path = '' then Self.Path            := 'temp_videos';
-  if Self.KeepCopies = 0 then Self.KeepCopies := 2;
-  if Self.MouseColor = 0 then Self.MouseColor := 255;
-  if Self.MouseSizeX = 0 then Self.MouseSizeX := 1;
-  if Self.MouseSizeY = 0 then Self.MouseSizeY := 1;
-
-  Self.FPS                                    := ClipFPS;
-  Self.Duration                               := ClipDurationInSeconds * 1000;
-  Self.TimeBetweenPics                        := 1000 div Self.FPS;
-  Self.RecordMouse                            := True;
-  Self.TimeAtLastPermSave                     := GetTickCount();
-
+  Self.FPS                                          := ClipFPS;
+  Self.Duration                                     := ClipDurationInSeconds * 1000;
+  Self.TimeBetweenPics                              := 1000 div Self.FPS;
+  Self.RecordMouse                                  := True;
 
   GetClientDimensions(Self.ClientDimensionW, Self.ClientDimensionH);
   if (Self.ClientDimensionW < 1) or (Self.ClientDimensionH < 1) then
   begin
-    if not self.NoDebugMessages then
-      writeln('ERROR: client dimensions problem. Width: ', Self.ClientDimensionW, ' & Height: ', Self.ClientDimensionH);
+    if not self.SilentMode then
+      client.writeln('ERROR: client dimensions problem. Width: ' + IntToStr(Self.ClientDimensionW) + ' & Height: ' + IntToStr(Self.ClientDimensionH));
     exit(); //forces self.Timer to be nil, since it wont be init'd below
   end;
 
@@ -190,22 +231,42 @@ begin
   if Self.ClientDimensionW mod 2 = 1 then Dec(Self.ClientDimensionW);
   if Self.ClientDimensionH mod 2 = 1 then Dec(Self.ClientDimensionH);
 
-  DeleteDirectory(Self.Path, true);
-  CreateDirectory(Self.Path);
-  CreateDirectory(Self.Path+'/tmp/');
+  //adds main folder to VideosFolder
+  if Self.MainFolder <> '' then
+  begin
+    CreateDirectory(Self.MainFolder);
+    if not DirectoryExists(Self.MainFolder) then
+    begin
+      if not Self.SilentMode then
+        client.WriteLn('ERROR: unable to create directory ' + Self.MainFolder);
+      exit();
+    end;
+    Self.VideosFolder := (Self.MainFolder + '/' + Self.VideosFolder);
+  end;
 
-  if not DirectoryExists(Self.Path) then
+  DeleteDirectory(Self.VideosFolder, true);
+  if DirectoryExists(Self.VideosFolder) then
+  begin
+    if not self.SilentMode then
+      client.WriteLn('ERROR: unable to delete directory ' + Self.VideosFolder);
+    exit();
+  end;
+
+  CreateDirectory(Self.VideosFolder);
+  CreateDirectory(Self.VideosFolder+'/tmp/');
+
+  if not DirectoryExists(Self.VideosFolder) then
   begin
     wait(1000); //incase file explorer was open, blocking us
-    DeleteDirectory(Self.Path, true);
-    CreateDirectory(Self.Path);
-    CreateDirectory(Self.Path+'/tmp/');
+    DeleteDirectory(Self.VideosFolder, true);
+    CreateDirectory(Self.VideosFolder);
+    CreateDirectory(Self.VideosFolder+'/tmp/');
 
-    if not DirectoryExists(Self.Path) then
+    if not DirectoryExists(Self.VideosFolder) then
     begin
-      if not self.NoDebugMessages then
-        writeln('ERROR: unable to create ' + Self.Path + ' directory');
-      exit(); //forces self.Timer to be nil, since self.Timer wont be initialized below
+      if not self.SilentMode then
+        client.writeln('ERROR: unable to create ' + Self.VideosFolder + ' directory');
+      exit();
     end;
   end;
 
@@ -216,4 +277,5 @@ begin
   AddOnTerminate('StopGameRecorder');
 
   Self.Timer.SetEnabled(True);
+  Self.Started := True;
 end;
