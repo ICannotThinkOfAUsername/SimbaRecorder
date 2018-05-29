@@ -1,5 +1,5 @@
 {
-  Pretty much anything good in this code you can thank Slacky for.
+  Pretty much anything good in this code you can thank Slacky [atleast in part] for.
   Also thanks to Citrus for mentioning ffmpeg + how to use it via the command prompt
 }
 
@@ -8,10 +8,11 @@ type
     Timer: TMMLTimer;
     Path: String;
     FPS, Duration, TimeBetweenPics, FileNumber, KeepCopies,
-    ClientDimensionW, ClientDimensionH: Int32;
+    ClientDimensionW, ClientDimensionH, MouseSizeX, MouseSizeY: Int32;
     Frames: array of TMufasaBitmap;
-    CanFree, NoDebugMessages, OnlySaveOnTerminate: Boolean;
+    CanFree, NoDebugMessages, OnlySaveOnTerminate, RecordMouse: Boolean;
     EveryLoop: Procedure;
+    MouseColor: TColor;
   end;
 
 var
@@ -74,6 +75,7 @@ end;
 procedure TGameRecorder.Capture(Junk, Sender: Pointer); static;
 var
   FrameCount: int32;
+  x, y: int32;
 begin
   GameRecorder.CanFree := False;
   FrameCount := Length(GameRecorder.Frames);
@@ -82,7 +84,16 @@ begin
   begin
     SetLength(GameRecorder.Frames, FrameCount+1);
     GameRecorder.Frames[FrameCount].Init(client.GetMBitmaps);
+    //GameRecorder.Frames[FrameCount].DrawTPA(TPAFromBox([x-1, y-1, x+1, y+1]), $FF);
+    //GameRecorder.Frames[FrameCount].DrawTransparent(x, y, GameRecorder.Frames[FrameCount]);
     GameRecorder.Frames[FrameCount].CopyClientToBitmap(client.GetIOManager, True, 0,0, GameRecorder.ClientDimensionW-1, GameRecorder.ClientDimensionH-1);
+
+    if GameRecorder.RecordMouse then
+    begin
+      Client.GetIOManager.GetMousePos(x, y);
+      if (x > GameRecorder.MouseSizeX) and (x < GameRecorder.ClientDimensionW) and (y > GameRecorder.MouseSizeY) and (y < GameRecorder.ClientDimensionH) then
+        GameRecorder.Frames[FrameCount].DrawTPA(TPAFromBox([x-GameRecorder.MouseSizeX, y-GameRecorder.MouseSizeY, x+GameRecorder.MouseSizeX, y+GameRecorder.MouseSizeY]), GameRecorder.MouseColor);
+    end;
   end else
   begin
     if not (@GameRecorder.EveryLoop = nil) then
@@ -127,11 +138,15 @@ end;
 procedure TGameRecorder.Start(ClipFPS, ClipDurationInSeconds: Int32);
 begin
   if Self.Path = '' then Self.Path            := 'temp_videos';
-  if Self.KeepCopies = 0 then self.KeepCopies := 2;
+  if Self.KeepCopies = 0 then Self.KeepCopies := 2;
+  if Self.MouseColor = 0 then Self.MouseColor := 255;
+  if Self.MouseSizeX = 0 then Self.MouseSizeX := 1;
+  if Self.MouseSizeY = 0 then Self.MouseSizeY := 1;
 
   Self.FPS                                    := ClipFPS;
   Self.Duration                               := ClipDurationInSeconds * 1000;
   Self.TimeBetweenPics                        := 1000 div Self.FPS;
+  Self.RecordMouse                            := True;
 
 
   GetClientDimensions(Self.ClientDimensionW, Self.ClientDimensionH);
