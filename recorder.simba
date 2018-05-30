@@ -246,9 +246,14 @@ begin
   DeleteDirectory(Self.TempVideosFolder, true);
   if DirectoryExists(Self.TempVideosFolder) then
   begin
-    if not self.SilentMode then
-      client.WriteLn('ERROR: unable to delete directory ' + Self.TempVideosFolder);
-    exit();
+    wait(1000); //incase file explorer was open, blocking us
+    DeleteDirectory(Self.TempVideosFolder, true);
+    if DirectoryExists(Self.TempVideosFolder) then
+    begin
+      if not self.SilentMode then
+        client.WriteLn('ERROR: unable to delete directory ' + Self.TempVideosFolder);
+      exit();
+    end;
   end;
 
   CreateDirectory(Self.TempVideosFolder);
