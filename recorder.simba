@@ -6,7 +6,7 @@
 type
   TGameRecorder = record
     Timer: TMMLTimer;
-    VideosFolder, MainFolder: String;
+    TempVideosFolder, MainFolder: String;
     FPS, Duration, TimeBetweenPics, FileNumber, KeepCopies,
     ClientDimensionW, ClientDimensionH, MouseSizeX, MouseSizeY: Int32;
     Frames: array of TMufasaBitmap;
@@ -38,7 +38,7 @@ begin
   Proc.Free();
 end;
 
-procedure TGameRecorder._Save(SaveName: string = '');
+function TGameRecorder._Save(SaveName: string = ''): boolean;
 var
   i: Int32;
   VideoName, VideoNumber: string;
@@ -51,7 +51,7 @@ begin
         client.writeln('ERROR: Recorder is not running, can''t save file!')
       else
         client.writeln('WARNING: No more frames to save, exitting');
-    exit();
+    exit(False);
   end;
 
   //Checking to see if we're already saving a video
@@ -59,36 +59,35 @@ begin
   begin
     if not self.SilentMode then
       client.WriteLn('ERROR: Already saving a video! exitting.');
-    exit();
+    exit(False);
   end else
     Self.SavingVideo := true;
 
   //Clearing /tmp/
-  DeleteDirectory(self.VideosFolder + '/tmp', true);
-  if DirectoryExists(self.VideosFolder + '/tmp') then
+  DeleteDirectory(self.TempVideosFolder + '/tmp', true);
+  if DirectoryExists(self.TempVideosFolder + '/tmp') then
   begin
     if not self.SilentMode then
-      client.WriteLn('ERROR: Failed to delete ' + self.VideosFolder + '/tmp');
+      client.WriteLn('ERROR: Failed to delete ' + self.TempVideosFolder + '/tmp');
     Self.SavingVideo := false;
-    exit();
+    exit(False);
   end;
-
-  CreateDirectory(self.VideosFolder + '/tmp');
-  if not DirectoryExists(self.VideosFolder + '/tmp') then
+  CreateDirectory(self.TempVideosFolder + '/tmp');
+  if not DirectoryExists(self.TempVideosFolder + '/tmp') then
   begin
     if not self.SilentMode then
-      client.WriteLn('ERROR: Failed to create ' + self.VideosFolder + '/tmp');
+      client.WriteLn('ERROR: Failed to create ' + self.TempVideosFolder + '/tmp');
     Self.SavingVideo := false;
-    exit();
+    exit(False);
   end;
 
   //Saving bitmaps to file as imgX.jpg
   if not self.SilentMode then
     client.WriteLn('Saving ' + IntToStr(length(self.Frames)) + ' Images');
   for i:=0 to high(self.Frames) do
-    self.Frames[i].SaveToFile(Format('%s/tmp/img%d.jpg', [self.VideosFolder, i+1]));
+    self.Frames[i].SaveToFile(Format('%s/tmp/img%d.jpg', [self.TempVideosFolder, i+1]));
 
-  //pics are cleared out only when doing a regular save, regular users calling .save() wont be clearing out recent images.
+  //pics are cleared out only when doing a regular save, users calling .save() wont be clearing out recent images.
   if SaveName = '' then
   begin
     for i:=0 to high(self.Frames) do
@@ -96,7 +95,7 @@ begin
     SetLength(self.Frames, 0);
   end;
 
-  //VideoName and VideoNumber
+  //Setting up VideoName and VideoNumber
   if SaveName = '' then
   begin
     //If calling ._save() directly, with no SaveName
@@ -104,7 +103,7 @@ begin
     begin
       if not self.SilentMode then
         client.WriteLn('Deleting video: '+'output'+intToStr(self.FileNumber - self.KeepCopies + 1)+'.mp4');
-      DeleteFile(self.VideosFolder +'/output'+intToStr(self.FileNumber - self.KeepCopies + 1)+'.mp4');
+      DeleteFile(self.TempVideosFolder +'/output'+intToStr(self.FileNumber - self.KeepCopies + 1)+'.mp4');
     end;
     inc(self.FileNumber);
 
@@ -113,11 +112,11 @@ begin
   end else
   begin
     //If User calls .Save(), which asks for a SaveName
-    if FileExists(Self.VideosFolder + '/' + SaveName + '.mp4') then
+    if FileExists(Self.TempVideosFolder + '/' + SaveName + '.mp4') then
     begin
       if not self.SilentMode then
         client.WriteLn('WARNING: ' + SaveName + '.mp4' + ' already exists. We are writing over that file now.');
-      DeleteFile(Self.VideosFolder + '/' + SaveName + '.mp4');
+      DeleteFile(Self.TempVideosFolder + '/' + SaveName + '.mp4');
     end;
 
     VideoName := SaveName;
@@ -127,16 +126,17 @@ begin
   if not self.SilentMode then
     client.WriteLn('Generating video: '+VideoName+VideoNumber+'.mp4');
 
-  Execute('ffmpeg -vtag xvid -framerate ' + ToStr(self.FPS) + ' -i "'+self.VideosFolder+'/tmp/img%01d.jpg" "'+self.VideosFolder+'/'+VideoName+VideoNumber+'.mp4'+'"');
+  Execute('ffmpeg -vtag xvid -framerate ' + ToStr(self.FPS) + ' -i "'+self.TempVideosFolder+'/tmp/img%01d.jpg" "'+self.TempVideosFolder+'/'+VideoName+VideoNumber+'.mp4'+'"');
   Self.SavingVideo := false;
+  Result := true;
 end;
 
 {
   To help differentiate between a user save and an internal _save
 }
-procedure TGameRecorder.Save(SaveName: string);
+function TGameRecorder.Save(SaveName: string): boolean;
 begin
-  Self._Save(SaveName);
+  result := Self._Save(SaveName);
 end;
 
 procedure TGameRecorder.Capture(Junk, Sender: Pointer); static;
@@ -186,7 +186,8 @@ begin
   if self.Timer = nil then
     exit();
 
-  Client.WriteLn('Stopping Recorder and doing a final save.');
+  if not Self.SilentMode then
+    Client.WriteLn('Stopping Recorder and doing a final save.');
 
   Self.Timer.SetEnabled(False);
   Self._Save();
@@ -202,13 +203,12 @@ end;
 procedure StopGameRecorder();
 begin
   GameRecorder.Stop();
-
-  //GameRecorder  //i was gonna add something here....hmm...
+  //GameRecorder  //I might've wanted to add something here....hmm...
 end;
 
 procedure TGameRecorder.Start(ClipFPS, ClipDurationInSeconds: Int32);
 begin
-  if Self.VideosFolder = '' then Self.VideosFolder  := 'temp_videos';
+  if Self.TempVideosFolder = '' then Self.TempVideosFolder  := 'temp_videos';
   if Self.KeepCopies = 0 then Self.KeepCopies       := 2;
   if Self.MouseColor = 0 then Self.MouseColor       := 255;
   if Self.MouseSizeX = 0 then Self.MouseSizeX       := 1;
@@ -230,7 +230,7 @@ begin
   if Self.ClientDimensionW mod 2 = 1 then Dec(Self.ClientDimensionW);
   if Self.ClientDimensionH mod 2 = 1 then Dec(Self.ClientDimensionH);
 
-  //adds main folder to VideosFolder
+  //adds main folder to TempVideosFolder
   if Self.MainFolder <> '' then
   begin
     CreateDirectory(Self.MainFolder);
@@ -240,31 +240,31 @@ begin
         client.WriteLn('ERROR: unable to create directory ' + Self.MainFolder);
       exit();
     end;
-    Self.VideosFolder := (Self.MainFolder + '/' + Self.VideosFolder);
+    Self.TempVideosFolder := (Self.MainFolder + '/' + Self.TempVideosFolder);
   end;
 
-  DeleteDirectory(Self.VideosFolder, true);
-  if DirectoryExists(Self.VideosFolder) then
+  DeleteDirectory(Self.TempVideosFolder, true);
+  if DirectoryExists(Self.TempVideosFolder) then
   begin
     if not self.SilentMode then
-      client.WriteLn('ERROR: unable to delete directory ' + Self.VideosFolder);
+      client.WriteLn('ERROR: unable to delete directory ' + Self.TempVideosFolder);
     exit();
   end;
 
-  CreateDirectory(Self.VideosFolder);
-  CreateDirectory(Self.VideosFolder+'/tmp/');
+  CreateDirectory(Self.TempVideosFolder);
+  CreateDirectory(Self.TempVideosFolder+'/tmp/');
 
-  if not DirectoryExists(Self.VideosFolder) then
+  if not DirectoryExists(Self.TempVideosFolder) then
   begin
     wait(1000); //incase file explorer was open, blocking us
-    DeleteDirectory(Self.VideosFolder, true);
-    CreateDirectory(Self.VideosFolder);
-    CreateDirectory(Self.VideosFolder+'/tmp/');
+    DeleteDirectory(Self.TempVideosFolder, true);
+    CreateDirectory(Self.TempVideosFolder);
+    CreateDirectory(Self.TempVideosFolder+'/tmp/');
 
-    if not DirectoryExists(Self.VideosFolder) then
+    if not DirectoryExists(Self.TempVideosFolder) then
     begin
       if not self.SilentMode then
-        client.writeln('ERROR: unable to create ' + Self.VideosFolder + ' directory');
+        client.writeln('ERROR: unable to create ' + Self.TempVideosFolder + ' directory');
       exit();
     end;
   end;
