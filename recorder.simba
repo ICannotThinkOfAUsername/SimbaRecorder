@@ -67,10 +67,15 @@ begin
   DeleteDirectory(self.TempVideosFolder + '/tmp', true);
   if DirectoryExists(self.TempVideosFolder + '/tmp') then
   begin
-    if not self.SilentMode then
-      client.WriteLn('ERROR: Failed to delete ' + self.TempVideosFolder + '/tmp');
-    Self.SavingVideo := false;
-    exit(False);
+    wait(1000); //incase file explorer caused problems with deleting the directory
+    DeleteDirectory(self.TempVideosFolder + '/tmp', true);
+    if DirectoryExists(self.TempVideosFolder + '/tmp') then
+    begin
+      if not self.SilentMode then
+        client.WriteLn('ERROR: Failed to delete ' + self.TempVideosFolder + '/tmp');
+      Self.SavingVideo := false;
+      exit(False);
+    end;
   end;
   CreateDirectory(self.TempVideosFolder + '/tmp');
   if not DirectoryExists(self.TempVideosFolder + '/tmp') then
@@ -208,6 +213,8 @@ end;
 
 procedure TVideoRecorder.Start(ClipFPS, ClipDurationInSeconds: Int32);
 begin
+  //todo, add update checking
+
   if Self.TempVideosFolder = '' then Self.TempVideosFolder  := 'temp_videos';
   if Self.KeepCopies = 0 then Self.KeepCopies       := 2;
   if Self.MouseColor = 0 then Self.MouseColor       := 255;
@@ -246,7 +253,7 @@ begin
   DeleteDirectory(Self.TempVideosFolder, true);
   if DirectoryExists(Self.TempVideosFolder) then
   begin
-    wait(1000); //incase file explorer was open, blocking us
+    wait(1000); //incase file explorer caused problems with deleting the directory
     DeleteDirectory(Self.TempVideosFolder, true);
     if DirectoryExists(Self.TempVideosFolder) then
     begin
@@ -261,7 +268,8 @@ begin
 
   if not DirectoryExists(Self.TempVideosFolder) then
   begin
-    wait(1000); //incase file explorer was open, blocking us
+    wait(1000); //incase file explorer caused problems with deleting the directory
+    //note to self, why are we deleting directory here? directory does NOT exist??
     DeleteDirectory(Self.TempVideosFolder, true);
     CreateDirectory(Self.TempVideosFolder);
     CreateDirectory(Self.TempVideosFolder+'/tmp/');
