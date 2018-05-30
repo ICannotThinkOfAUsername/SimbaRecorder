@@ -203,7 +203,7 @@ procedure StopGameRecorder();
 begin
   GameRecorder.Stop();
 
-  GameRecorder
+  //GameRecorder  //i was gonna add something here....hmm...
 end;
 
 procedure TGameRecorder.Start(ClipFPS, ClipDurationInSeconds: Int32);
@@ -217,7 +217,6 @@ begin
   Self.FPS                                          := ClipFPS;
   Self.Duration                                     := ClipDurationInSeconds * 1000;
   Self.TimeBetweenPics                              := 1000 div Self.FPS;
-  Self.RecordMouse                                  := True;
 
   GetClientDimensions(Self.ClientDimensionW, Self.ClientDimensionH);
   if (Self.ClientDimensionW < 1) or (Self.ClientDimensionH < 1) then
