@@ -4,7 +4,7 @@
 }
 
 type
-  TGameRecorder = record
+  TVideoRecorder = record
     Timer: TMMLTimer;
     TempVideosFolder, MainFolder: String;
     FPS, Duration, TimeBetweenPics, FileNumber, KeepCopies,
@@ -17,7 +17,7 @@ type
   end;
 
 var
-  GameRecorder: TGameRecorder;
+  VideoRecorder: TVideoRecorder;
 
 {
   Runs a command in the Command Prompt.
@@ -38,7 +38,7 @@ begin
   Proc.Free();
 end;
 
-function TGameRecorder._Save(SaveName: string = ''): boolean;
+function TVideoRecorder._Save(SaveName: string = ''): boolean;
 var
   i: Int32;
   VideoName, VideoNumber: string;
@@ -134,52 +134,52 @@ end;
 {
   To help differentiate between a user save and an internal _save
 }
-function TGameRecorder.Save(SaveName: string): boolean;
+function TVideoRecorder.Save(SaveName: string): boolean;
 begin
   result := Self._Save(SaveName);
 end;
 
-procedure TGameRecorder.Capture(Junk, Sender: Pointer); static;
+procedure TVideoRecorder.Capture(Junk, Sender: Pointer); static;
 var
   FrameCount: int32;
   x, y: int32;
 begin
-  GameRecorder.CanFree := False;
-  FrameCount := Length(GameRecorder.Frames);
+  VideoRecorder.CanFree := False;
+  FrameCount := Length(VideoRecorder.Frames);
 
-  if (FrameCount * GameRecorder.TimeBetweenPics) < GameRecorder.Duration then
+  if (FrameCount * VideoRecorder.TimeBetweenPics) < VideoRecorder.Duration then
   begin
-    SetLength(GameRecorder.Frames, FrameCount+1);
-    GameRecorder.Frames[FrameCount].Init(client.GetMBitmaps);
-    GameRecorder.Frames[FrameCount].CopyClientToBitmap(client.GetIOManager, True, 0,0, GameRecorder.ClientDimensionW-1, GameRecorder.ClientDimensionH-1);
+    SetLength(VideoRecorder.Frames, FrameCount+1);
+    VideoRecorder.Frames[FrameCount].Init(client.GetMBitmaps);
+    VideoRecorder.Frames[FrameCount].CopyClientToBitmap(client.GetIOManager, True, 0,0, VideoRecorder.ClientDimensionW-1, VideoRecorder.ClientDimensionH-1);
 
-    if GameRecorder.RecordMouse then
+    if VideoRecorder.RecordMouse then
     begin
       Client.GetIOManager.GetMousePos(x, y);
-      if (x > GameRecorder.MouseSizeX) and (x < GameRecorder.ClientDimensionW) and (y > GameRecorder.MouseSizeY) and (y < GameRecorder.ClientDimensionH) then
-        GameRecorder.Frames[FrameCount].DrawTPA(TPAFromBox([x-GameRecorder.MouseSizeX, y-GameRecorder.MouseSizeY, x+GameRecorder.MouseSizeX, y+GameRecorder.MouseSizeY]), GameRecorder.MouseColor);
+      if (x > VideoRecorder.MouseSizeX) and (x < VideoRecorder.ClientDimensionW) and (y > VideoRecorder.MouseSizeY) and (y < VideoRecorder.ClientDimensionH) then
+        VideoRecorder.Frames[FrameCount].DrawTPA(TPAFromBox([x-VideoRecorder.MouseSizeX, y-VideoRecorder.MouseSizeY, x+VideoRecorder.MouseSizeX, y+VideoRecorder.MouseSizeY]), VideoRecorder.MouseColor);
     end;
   end else
   begin
-    if not (@GameRecorder.EveryLoop = nil) then
-      GameRecorder.EveryLoop();
+    if not (@VideoRecorder.EveryLoop = nil) then
+      VideoRecorder.EveryLoop();
 
-    if GameRecorder.OnlySaveOnTerminate then
+    if VideoRecorder.OnlySaveOnTerminate then
     begin
-      GameRecorder.Frames[0].Free();
-      delete(GameRecorder.Frames, 0, 1);
+      VideoRecorder.Frames[0].Free();
+      delete(VideoRecorder.Frames, 0, 1);
 
-      SetLength(GameRecorder.Frames, FrameCount);
-      GameRecorder.Frames[FrameCount - 1].Init(client.GetMBitmaps);
-      GameRecorder.Frames[FrameCount - 1].CopyClientToBitmap(client.GetIOManager, True, 0,0, GameRecorder.ClientDimensionW-1, GameRecorder.ClientDimensionH-1);
+      SetLength(VideoRecorder.Frames, FrameCount);
+      VideoRecorder.Frames[FrameCount - 1].Init(client.GetMBitmaps);
+      VideoRecorder.Frames[FrameCount - 1].CopyClientToBitmap(client.GetIOManager, True, 0,0, VideoRecorder.ClientDimensionW-1, VideoRecorder.ClientDimensionH-1);
     end else
-      GameRecorder._Save();
+      VideoRecorder._Save();
   end;
 
-  GameRecorder.CanFree := True;
+  VideoRecorder.CanFree := True;
 end;
 
-procedure TGameRecorder.Stop();
+procedure TVideoRecorder.Stop();
 var
   i: Int32;
 begin
@@ -200,13 +200,13 @@ begin
 end;
 
 //I wanted to do something like `AddOnTerminate('Self.Stop');` but that didnt seem to work
-procedure StopGameRecorder();
+procedure StopVideoRecorder();
 begin
-  GameRecorder.Stop();
-  //GameRecorder  //I might've wanted to add something here....hmm...
+  VideoRecorder.Stop();
+  //VideoRecorder  //I might've wanted to add something here....hmm...
 end;
 
-procedure TGameRecorder.Start(ClipFPS, ClipDurationInSeconds: Int32);
+procedure TVideoRecorder.Start(ClipFPS, ClipDurationInSeconds: Int32);
 begin
   if Self.TempVideosFolder = '' then Self.TempVideosFolder  := 'temp_videos';
   if Self.KeepCopies = 0 then Self.KeepCopies       := 2;
@@ -271,9 +271,9 @@ begin
 
   Self.Timer.Init();
   Self.Timer.SetInterval(1000 div Self.FPS);
-  Self.Timer.SetOnTimer(natify(@TGameRecorder.Capture));
+  Self.Timer.SetOnTimer(natify(@TVideoRecorder.Capture));
 
-  AddOnTerminate('StopGameRecorder');
+  AddOnTerminate('StopVideoRecorder');
 
   Self.Timer.SetEnabled(True);
   Self.Started := True;
