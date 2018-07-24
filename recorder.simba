@@ -6,6 +6,7 @@
 type
   TVideoRecorder = record
     Timer: TMMLTimer;
+    TempVideosFolder, MainFolder, TempImagesDir, PrevTempImagesDir: String;
     FPS, Duration, TimeBetweenPics, FileNumber, KeepCopies,
     ClientDimensionW, ClientDimensionH, MouseSizeX, MouseSizeY: Int32;
     Frames: array of TMufasaBitmap;
@@ -46,12 +47,29 @@ begin
     DeleteDirectory(Dir, true);
 
     if DirectoryExists(Dir) then
-      wait(500) //incase file explorer or something caused problems here
+      wait(500) //incase file explorer or something caused temporary problems here
     else
-      exit(true);
+      exit(true); //Directory does not exist, hooray
   end;
 
-  exit(False);
+  exit(false);
+end;
+
+function ReallyCreateDirectory(Dir: string; Tries: int32 = 2): boolean;
+var
+  i: int32;
+begin
+  for i:=1 to Tries do
+  begin
+    CreateDirectory(Dir);
+
+    if not DirectoryExists(Dir) then
+      wait(500) //incase file explorer or something else caused temporary problems here
+    else
+      exit(true); //Directory does exist, hooray
+  end;
+
+  exit(false);
 end;
 
 function TVideoRecorder._Save(SaveName: string = ''): boolean;
@@ -79,8 +97,8 @@ begin
   end else
     Self.SavingVideo := true;
 
-  //Clearing /temp_images/
-  Self.TempImagesDir := '/temp_images'+IntToStr(self.FileNumber - self.KeepCopies + 3);
+  //Clearing \temp_images\
+  Self.TempImagesDir := '\temp_images'+IntToStr(self.FileNumber - self.KeepCopies + 3);
 
   if not ReallyDeleteDirectory(self.TempVideosFolder + Self.TempImagesDir, true) then
   begin
@@ -91,8 +109,7 @@ begin
     exit(False);
   end;
 
-  CreateDirectory(self.TempVideosFolder + Self.TempImagesDir);
-  if not DirectoryExists(self.TempVideosFolder + Self.TempImagesDir) then
+  if not ReallyCreateDirectory(self.TempVideosFolder + Self.TempImagesDir) then
   begin
     if not self.SilentMode then
       client.WriteLn('ERROR: Failed to create ' + self.TempVideosFolder + Self.TempImagesDir);
@@ -105,7 +122,7 @@ begin
   if not self.SilentMode then
     client.WriteLn('Saving ' + IntToStr(length(self.Frames)) + ' Images');
   for i:=0 to high(self.Frames) do
-    self.Frames[i].SaveToFile(Format('%s'+Self.TempImagesDir+'/img%d.jpg', [self.TempVideosFolder, i+1]));
+    self.Frames[i].SaveToFile(Format('%s'+Self.TempImagesDir+'\img%d.jpg', [self.TempVideosFolder, i+1]));
 
   //pics are cleared out only when doing a regular save, users calling .save() wont be clearing out recent images.
   if SaveName = '' then
@@ -122,12 +139,12 @@ begin
     if self.FileNumber >= (self.KeepCopies) then
     begin
       if not self.SilentMode then
-        client.WriteLn('Deleting video: /'+self.TempVideosFolder+'/output'+intToStr(self.FileNumber - self.KeepCopies + 1)+'.mp4');
-      DeleteFile(self.TempVideosFolder +'/output'+intToStr(self.FileNumber - self.KeepCopies + 1)+'.mp4');
+        client.WriteLn('Deleting video: \'+self.TempVideosFolder+'\output'+intToStr(self.FileNumber - self.KeepCopies + 1)+'.mp4');
+      DeleteFile(self.TempVideosFolder +'\output'+intToStr(self.FileNumber - self.KeepCopies + 1)+'.mp4');
 
       if not self.SilentMode then
-        client.WriteLn('Deleting Directory: /'+self.TempVideosFolder+'/temp_images'+IntToStr(self.FileNumber - self.KeepCopies + 1));
-      ReallyDeleteDirectory(self.TempVideosFolder+'/temp_images'+IntToStr(self.FileNumber - self.KeepCopies + 1)+'/', true);
+        client.WriteLn('Deleting Directory: \'+self.TempVideosFolder+'\temp_images'+IntToStr(self.FileNumber - self.KeepCopies + 1));
+      ReallyDeleteDirectory(self.TempVideosFolder+'\temp_images'+IntToStr(self.FileNumber - self.KeepCopies + 1)+'\', true);
     end;
     inc(self.FileNumber);
 
@@ -136,11 +153,11 @@ begin
   end else
   begin
     //If User calls .Save(), which asks for a SaveName
-    if FileExists(Self.TempVideosFolder + '/' + SaveName + '.mp4') then
+    if FileExists(Self.TempVideosFolder + '\' + SaveName + '.mp4') then
     begin
       if not self.SilentMode then
         client.WriteLn('WARNING: ' + SaveName + '.mp4' + ' already exists. We are writing over that file now.');
-      DeleteFile(Self.TempVideosFolder + '/' + SaveName + '.mp4');
+      DeleteFile(Self.TempVideosFolder + '\' + SaveName + '.mp4');
     end;
 
     VideoName := SaveName;
@@ -148,9 +165,9 @@ begin
   end;
 
   if not self.SilentMode then
-    client.WriteLn('Generating video: /'+self.TempVideosFolder+'/'+VideoName+VideoNumber+'.mp4');
+    client.WriteLn('Generating video: \'+self.TempVideosFolder+'\'+VideoName+VideoNumber+'.mp4');
 
-  Execute('ffmpeg -vtag xvid -framerate ' + ToStr(self.FPS) + ' -i "'+self.TempVideosFolder+Self.TempImagesDir+'/img%01d.jpg" "'+self.TempVideosFolder+'/'+VideoName+VideoNumber+'.mp4'+'"');
+  Execute('ffmpeg -vtag xvid -framerate ' + ToStr(self.FPS) + ' -i "'+self.TempVideosFolder+Self.TempImagesDir+'\img%01d.jpg" "'+self.TempVideosFolder+'\'+VideoName+VideoNumber+'.mp4'+'"');
   Self.SavingVideo := false;
   Result := true;
 end;
@@ -243,7 +260,7 @@ begin
   Self.FPS                                          := ClipFPS;
   Self.Duration                                     := ClipDurationInSeconds * 1000;
   Self.TimeBetweenPics                              := 1000 div Self.FPS;
-  Self.TempImagesDir                                := '/temp_images'+IntToStr(self.FileNumber - self.KeepCopies + 3);
+  Self.TempImagesDir                                := '\temp_images'+IntToStr(self.FileNumber - self.KeepCopies + 3);
 
   GetClientDimensions(Self.ClientDimensionW, Self.ClientDimensionH);
   if (Self.ClientDimensionW < 1) or (Self.ClientDimensionH < 1) then
@@ -260,14 +277,14 @@ begin
   //adds main folder to TempVideosFolder
   if Self.MainFolder <> '' then
   begin
-    CreateDirectory(Self.MainFolder);
-    if not DirectoryExists(Self.MainFolder) then
+    if not ReallyCreateDirectory(Self.MainFolder) then
     begin
       if not Self.SilentMode then
         client.WriteLn('ERROR: unable to create directory ' + Self.MainFolder);
       exit();
     end;
-    Self.TempVideosFolder := (Self.MainFolder + '/' + Self.TempVideosFolder);
+
+    Self.TempVideosFolder := (Self.MainFolder + '\' + Self.TempVideosFolder);
   end;
 
   if not ReallyDeleteDirectory(self.TempVideosFolder, true) then
@@ -277,23 +294,18 @@ begin
     exit();
   end;
 
-  CreateDirectory(Self.TempVideosFolder);
-  CreateDirectory(Self.TempVideosFolder+Self.TempImagesDir+'/');
-
-  if not DirectoryExists(Self.TempVideosFolder) then
+  if not ReallyCreateDirectory(Self.TempVideosFolder) then
   begin
-    wait(1000); //incase file explorer caused problems with deleting the directory
-    //note to self, why are we deleting directory here? directory does NOT exist??
-    DeleteDirectory(Self.TempVideosFolder, true);
-    CreateDirectory(Self.TempVideosFolder);
-    CreateDirectory(Self.TempVideosFolder+Self.TempImagesDir+'/');
+    if not self.SilentMode then
+      client.writeln('ERROR: unable to create ' + Self.TempVideosFolder + '\ directory');
+    exit();
+  end;
 
-    if not DirectoryExists(Self.TempVideosFolder) then
-    begin
-      if not self.SilentMode then
-        client.writeln('ERROR: unable to create ' + Self.TempVideosFolder + ' directory');
-      exit();
-    end;
+  if not ReallyCreateDirectory(Self.TempVideosFolder+Self.TempImagesDir+'\') then
+  begin
+    if not self.SilentMode then
+      client.writeln('ERROR: unable to create ' + Self.TempVideosFolder+Self.TempImagesDir+'\ directory');
+    exit();
   end;
 
   Self.Timer.Init();
