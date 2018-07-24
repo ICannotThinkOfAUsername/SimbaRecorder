@@ -6,7 +6,6 @@
 type
   TVideoRecorder = record
     Timer: TMMLTimer;
-    TempVideosFolder, MainFolder: String;
     FPS, Duration, TimeBetweenPics, FileNumber, KeepCopies,
     ClientDimensionW, ClientDimensionH, MouseSizeX, MouseSizeY: Int32;
     Frames: array of TMufasaBitmap;
@@ -38,6 +37,23 @@ begin
   Proc.Free();
 end;
 
+function ReallyDeleteDirectory(Dir: string; Empty: boolean; Tries: int32 = 2): boolean;
+var
+  i: int32;
+begin
+  for i:=1 to Tries do
+  begin
+    DeleteDirectory(Dir, true);
+
+    if DirectoryExists(Dir) then
+      wait(500) //incase file explorer or something caused problems here
+    else
+      exit(true);
+  end;
+
+  exit(False);
+end;
+
 function TVideoRecorder._Save(SaveName: string = ''): boolean;
 var
   i: Int32;
@@ -63,25 +79,24 @@ begin
   end else
     Self.SavingVideo := true;
 
-  //Clearing /tmp/
-  DeleteDirectory(self.TempVideosFolder + '/tmp', true);
-  if DirectoryExists(self.TempVideosFolder + '/tmp') then
-  begin
-    wait(1000); //incase file explorer caused problems with deleting the directory
-    DeleteDirectory(self.TempVideosFolder + '/tmp', true);
-    if DirectoryExists(self.TempVideosFolder + '/tmp') then
-    begin
-      if not self.SilentMode then
-        client.WriteLn('ERROR: Failed to delete ' + self.TempVideosFolder + '/tmp');
-      Self.SavingVideo := false;
-      exit(False);
-    end;
-  end;
-  CreateDirectory(self.TempVideosFolder + '/tmp');
-  if not DirectoryExists(self.TempVideosFolder + '/tmp') then
+  //Clearing /temp_images/
+  Self.TempImagesDir := '/temp_images'+IntToStr(self.FileNumber - self.KeepCopies + 3);
+
+  if not ReallyDeleteDirectory(self.TempVideosFolder + Self.TempImagesDir, true) then
   begin
     if not self.SilentMode then
-      client.WriteLn('ERROR: Failed to create ' + self.TempVideosFolder + '/tmp');
+      client.WriteLn('ERROR: Failed to delete ' + self.TempVideosFolder + Self.TempImagesDir);
+
+    Self.SavingVideo := false;
+    exit(False);
+  end;
+
+  CreateDirectory(self.TempVideosFolder + Self.TempImagesDir);
+  if not DirectoryExists(self.TempVideosFolder + Self.TempImagesDir) then
+  begin
+    if not self.SilentMode then
+      client.WriteLn('ERROR: Failed to create ' + self.TempVideosFolder + Self.TempImagesDir);
+
     Self.SavingVideo := false;
     exit(False);
   end;
@@ -90,7 +105,7 @@ begin
   if not self.SilentMode then
     client.WriteLn('Saving ' + IntToStr(length(self.Frames)) + ' Images');
   for i:=0 to high(self.Frames) do
-    self.Frames[i].SaveToFile(Format('%s/tmp/img%d.jpg', [self.TempVideosFolder, i+1]));
+    self.Frames[i].SaveToFile(Format('%s'+Self.TempImagesDir+'/img%d.jpg', [self.TempVideosFolder, i+1]));
 
   //pics are cleared out only when doing a regular save, users calling .save() wont be clearing out recent images.
   if SaveName = '' then
@@ -107,8 +122,12 @@ begin
     if self.FileNumber >= (self.KeepCopies) then
     begin
       if not self.SilentMode then
-        client.WriteLn('Deleting video: '+'output'+intToStr(self.FileNumber - self.KeepCopies + 1)+'.mp4');
+        client.WriteLn('Deleting video: /'+self.TempVideosFolder+'/output'+intToStr(self.FileNumber - self.KeepCopies + 1)+'.mp4');
       DeleteFile(self.TempVideosFolder +'/output'+intToStr(self.FileNumber - self.KeepCopies + 1)+'.mp4');
+
+      if not self.SilentMode then
+        client.WriteLn('Deleting Directory: /'+self.TempVideosFolder+'/temp_images'+IntToStr(self.FileNumber - self.KeepCopies + 1));
+      ReallyDeleteDirectory(self.TempVideosFolder+'/temp_images'+IntToStr(self.FileNumber - self.KeepCopies + 1)+'/', true);
     end;
     inc(self.FileNumber);
 
@@ -129,9 +148,9 @@ begin
   end;
 
   if not self.SilentMode then
-    client.WriteLn('Generating video: '+VideoName+VideoNumber+'.mp4');
+    client.WriteLn('Generating video: /'+self.TempVideosFolder+'/'+VideoName+VideoNumber+'.mp4');
 
-  Execute('ffmpeg -vtag xvid -framerate ' + ToStr(self.FPS) + ' -i "'+self.TempVideosFolder+'/tmp/img%01d.jpg" "'+self.TempVideosFolder+'/'+VideoName+VideoNumber+'.mp4'+'"');
+  Execute('ffmpeg -vtag xvid -framerate ' + ToStr(self.FPS) + ' -i "'+self.TempVideosFolder+Self.TempImagesDir+'/img%01d.jpg" "'+self.TempVideosFolder+'/'+VideoName+VideoNumber+'.mp4'+'"');
   Self.SavingVideo := false;
   Result := true;
 end;
@@ -224,6 +243,7 @@ begin
   Self.FPS                                          := ClipFPS;
   Self.Duration                                     := ClipDurationInSeconds * 1000;
   Self.TimeBetweenPics                              := 1000 div Self.FPS;
+  Self.TempImagesDir                                := '/temp_images'+IntToStr(self.FileNumber - self.KeepCopies + 3);
 
   GetClientDimensions(Self.ClientDimensionW, Self.ClientDimensionH);
   if (Self.ClientDimensionW < 1) or (Self.ClientDimensionH < 1) then
@@ -250,21 +270,15 @@ begin
     Self.TempVideosFolder := (Self.MainFolder + '/' + Self.TempVideosFolder);
   end;
 
-  DeleteDirectory(Self.TempVideosFolder, true);
-  if DirectoryExists(Self.TempVideosFolder) then
+  if not ReallyDeleteDirectory(self.TempVideosFolder, true) then
   begin
-    wait(1000); //incase file explorer caused problems with deleting the directory
-    DeleteDirectory(Self.TempVideosFolder, true);
-    if DirectoryExists(Self.TempVideosFolder) then
-    begin
-      if not self.SilentMode then
-        client.WriteLn('ERROR: unable to delete directory ' + Self.TempVideosFolder);
-      exit();
-    end;
+    if not self.SilentMode then
+      client.WriteLn('ERROR: unable to delete directory ' + Self.TempVideosFolder);
+    exit();
   end;
 
   CreateDirectory(Self.TempVideosFolder);
-  CreateDirectory(Self.TempVideosFolder+'/tmp/');
+  CreateDirectory(Self.TempVideosFolder+Self.TempImagesDir+'/');
 
   if not DirectoryExists(Self.TempVideosFolder) then
   begin
@@ -272,7 +286,7 @@ begin
     //note to self, why are we deleting directory here? directory does NOT exist??
     DeleteDirectory(Self.TempVideosFolder, true);
     CreateDirectory(Self.TempVideosFolder);
-    CreateDirectory(Self.TempVideosFolder+'/tmp/');
+    CreateDirectory(Self.TempVideosFolder+Self.TempImagesDir+'/');
 
     if not DirectoryExists(Self.TempVideosFolder) then
     begin
