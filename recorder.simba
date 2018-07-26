@@ -10,7 +10,7 @@ type
     FPS, Duration, TimeBetweenPics, FileNumber, KeepCopies,
     ClientDimensionW, ClientDimensionH, MouseSizeX, MouseSizeY: Int32;
     Frames: array of TMufasaBitmap;
-    CanFree, SilentMode, OnlySaveOnTerminate, RecordMouse,
+    CanFree, SilentMode, SaveConstantly, RecordMouse,
     Started, SavingVideo: Boolean;
     EveryLoop: Procedure;
     MouseColor: TColor;
@@ -205,7 +205,7 @@ begin
     if not (@VideoRecorder.EveryLoop = nil) then
       VideoRecorder.EveryLoop();
 
-    if VideoRecorder.OnlySaveOnTerminate then
+    if not VideoRecorder.SaveConstantly then
     begin
       VideoRecorder.Frames[0].Free();
       delete(VideoRecorder.Frames, 0, 1);
@@ -249,8 +249,6 @@ end;
 
 procedure TVideoRecorder.Start(ClipFPS, ClipDurationInSeconds: Int32);
 begin
-  //todo, add update checking
-
   if Self.TempVideosFolder = '' then Self.TempVideosFolder  := 'temp_videos';
   if Self.KeepCopies = 0 then Self.KeepCopies       := 2;
   if Self.MouseColor = 0 then Self.MouseColor       := 255;
@@ -261,6 +259,7 @@ begin
   Self.Duration                                     := ClipDurationInSeconds * 1000;
   Self.TimeBetweenPics                              := 1000 div Self.FPS;
   Self.TempImagesDir                                := '\temp_images'+IntToStr(self.FileNumber - self.KeepCopies + 3);
+
 
   GetClientDimensions(Self.ClientDimensionW, Self.ClientDimensionH);
   if (Self.ClientDimensionW < 1) or (Self.ClientDimensionH < 1) then
