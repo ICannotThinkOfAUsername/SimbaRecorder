@@ -10,7 +10,7 @@ type
     FPS, Duration, TimeBetweenPics, FileNumber, KeepCopies,
     ClientDimensionW, ClientDimensionH, MouseSizeX, MouseSizeY: Int32;
     Frames: array of TMufasaBitmap;
-    CanFree, SilentMode, SaveConstantly, RecordMouse,
+    CanFree, SilentMode, SaveConstantly, DontProcessVideos, RecordMouse,
     Started, SavingVideo: Boolean;
     EveryLoop: Procedure;
     MouseColor: TColor;
@@ -120,7 +120,7 @@ begin
 
   //Saving bitmaps to file as imgX.jpg
   if not self.SilentMode then
-    client.WriteLn('Saving ' + IntToStr(length(self.Frames)) + ' Images');
+    client.WriteLn('Saving ' + IntToStr(length(self.Frames)) + ' Images to ' + self.TempVideosFolder + self.TempImagesDir);
   for i:=0 to high(self.Frames) do
     self.Frames[i].SaveToFile(Format('%s'+Self.TempImagesDir+'\img%d.jpg', [self.TempVideosFolder, i+1]));
 
@@ -138,12 +138,15 @@ begin
     //If calling ._save() directly, with no SaveName
     if self.FileNumber >= (self.KeepCopies) then
     begin
-      if not self.SilentMode then
-        client.WriteLn('Deleting video: \'+self.TempVideosFolder+'\output'+intToStr(self.FileNumber - self.KeepCopies + 1)+'.mp4');
-      DeleteFile(self.TempVideosFolder +'\output'+intToStr(self.FileNumber - self.KeepCopies + 1)+'.mp4');
+      if not self.DontProcessVideos then
+      begin
+        if not self.SilentMode then
+          client.WriteLn('Deleting video: '+self.TempVideosFolder+'\output'+intToStr(self.FileNumber - self.KeepCopies + 1)+'.mp4');
+        DeleteFile(self.TempVideosFolder +'\output'+intToStr(self.FileNumber - self.KeepCopies + 1)+'.mp4');
+      end;
 
       if not self.SilentMode then
-        client.WriteLn('Deleting Directory: \'+self.TempVideosFolder+'\temp_images'+IntToStr(self.FileNumber - self.KeepCopies + 1));
+        client.WriteLn('Deleting Directory: '+self.TempVideosFolder+'\temp_images'+IntToStr(self.FileNumber - self.KeepCopies + 1));
       ReallyDeleteDirectory(self.TempVideosFolder+'\temp_images'+IntToStr(self.FileNumber - self.KeepCopies + 1)+'\', true);
     end;
     inc(self.FileNumber);
@@ -164,10 +167,13 @@ begin
     VideoNumber := ''; //unnecessary
   end;
 
-  if not self.SilentMode then
-    client.WriteLn('Generating video: \'+self.TempVideosFolder+'\'+VideoName+VideoNumber+'.mp4');
+  if not self.DontProcessVideos then
+  begin
+    if not self.SilentMode then
+      client.WriteLn('Generating video: '+self.TempVideosFolder+'\'+VideoName+VideoNumber+'.mp4');
+    Execute('ffmpeg -vtag xvid -framerate ' + ToStr(self.FPS) + ' -i "'+self.TempVideosFolder+Self.TempImagesDir+'\img%01d.jpg" "'+self.TempVideosFolder+'\'+VideoName+VideoNumber+'.mp4'+'"');
+  end;
 
-  Execute('ffmpeg -vtag xvid -framerate ' + ToStr(self.FPS) + ' -i "'+self.TempVideosFolder+Self.TempImagesDir+'\img%01d.jpg" "'+self.TempVideosFolder+'\'+VideoName+VideoNumber+'.mp4'+'"');
   Self.SavingVideo := false;
   Result := true;
 end;
